@@ -31,7 +31,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -56,8 +59,8 @@ fun LivenessFlowRoute(
     sessionId: String,
     onCompleted: () -> Unit
 ) {
-    val required = remember {
-        linkedSetOf(
+    val requiredSequence = remember {
+        listOf(
             FacePoseDirection.LEFT,
             FacePoseDirection.RIGHT,
             FacePoseDirection.UP,
@@ -66,7 +69,7 @@ fun LivenessFlowRoute(
     }
     var stage by remember { mutableStateOf(LivenessStage.TRACKING) }
     var currentDirection by remember { mutableStateOf(FacePoseDirection.NO_FACE) }
-    var doneDirections by remember { mutableStateOf(setOf<FacePoseDirection>()) }
+    var currentStepIndex by remember { mutableStateOf(0) }
     var faceDetected by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -80,22 +83,23 @@ fun LivenessFlowRoute(
             verticalArrangement = Arrangement.spacedBy(Spacing.Md)
         ) {
             Text("Xác thực khuôn mặt", style = MaterialTheme.typography.titleLarge)
-            Text("Bước 4/5", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Thực hiện lần lượt: quay trái, quay phải, ngẩng lên, cúi xuống.")
+            Text("Thực hiện đúng thứ tự: Trái -> Phải -> Lên -> Xuống.")
 
             PoseCameraTrackerView(
                 onPoseUpdate = { result ->
                     currentDirection = result.direction
                     faceDetected = result.faceDetected
-                    if (result.direction in required) {
-                        doneDirections = doneDirections + result.direction
+                    val expected = requiredSequence.getOrNull(currentStepIndex)
+                    if (expected != null && result.direction == expected) {
+                        currentStepIndex += 1
                     }
                 }
             )
 
             LivenessOverlayStatus(
                 currentDirection = currentDirection,
-                doneDirections = doneDirections
+                requiredSequence = requiredSequence,
+                currentStepIndex = currentStepIndex
             )
 
             if (errorMessage != null) {
@@ -105,7 +109,7 @@ fun LivenessFlowRoute(
             Spacer(modifier = Modifier.weight(1f))
             PrimaryButton(
                 text = "Hoàn tất quay video",
-                enabled = faceDetected && doneDirections.containsAll(required),
+                enabled = faceDetected && currentStepIndex >= requiredSequence.size,
                 onClick = { stage = LivenessStage.REVIEW }
             )
         }
@@ -118,12 +122,15 @@ fun LivenessFlowRoute(
         ) {
             Text("Kiểm tra video", style = MaterialTheme.typography.titleLarge)
             Text("Bước 5/5", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Kết quả theo thứ tự bắt buộc:")
 
-            Text("Kết quả động tác:")
-            Text("• Trái: ${if (FacePoseDirection.LEFT in doneDirections) "Đạt" else "Chưa đạt"}")
-            Text("• Phải: ${if (FacePoseDirection.RIGHT in doneDirections) "Đạt" else "Chưa đạt"}")
-            Text("• Lên: ${if (FacePoseDirection.UP in doneDirections) "Đạt" else "Chưa đạt"}")
-            Text("• Xuống: ${if (FacePoseDirection.DOWN in doneDirections) "Đạt" else "Chưa đạt"}")
+            requiredSequence.forEachIndexed { index, direction ->
+                val done = index < currentStepIndex
+                Text(
+                    "${if (done) "✓" else "•"} ${directionLabel(direction)}",
+                    color = if (done) Color(0xFF166534) else Color(0xFF334155)
+                )
+            }
 
             if (errorMessage != null) {
                 Text(errorMessage ?: "", color = MaterialTheme.colorScheme.error)
@@ -135,7 +142,7 @@ fun LivenessFlowRoute(
                     SecondaryButton(
                         text = "Quay lại",
                         onClick = {
-                            doneDirections = emptySet()
+                            currentStepIndex = 0
                             stage = LivenessStage.TRACKING
                             errorMessage = null
                         }
@@ -144,7 +151,7 @@ fun LivenessFlowRoute(
                 Box(modifier = Modifier.weight(1f)) {
                     PrimaryButton(
                         text = if (uploading) "Đang gửi..." else "Dùng video này",
-                        enabled = !uploading && doneDirections.containsAll(required),
+                        enabled = !uploading && currentStepIndex >= requiredSequence.size,
                         onClick = {
                             uploading = true
                             errorMessage = null
@@ -155,8 +162,11 @@ fun LivenessFlowRoute(
                                         fileType = UploadFileType.LIVENESS_VIDEO,
                                         localPath = "mock/liveness.mp4"
                                     )
-                                    if (response.uploaded) onCompleted()
-                                    else errorMessage = response.error?.message ?: "Không thể tải video xác thực"
+                                    if (response.uploaded) {
+                                        onCompleted()
+                                    } else {
+                                        errorMessage = response.error?.message ?: "Không thể tải video xác thực"
+                                    }
                                 } catch (ex: Exception) {
                                     errorMessage = ex.message ?: "Không thể gửi video xác thực"
                                 } finally {
@@ -178,7 +188,12 @@ private fun PoseCameraTrackerView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    val previewView = remember { PreviewView(context) }
+    val previewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
     val poseTracker = remember { FacePoseTracker() }
 
     var hasCameraPermission by remember {
@@ -245,21 +260,36 @@ private fun PoseCameraTrackerView(
             factory = { previewView },
             modifier = Modifier.fillMaxSize()
         )
+        FaceOvalOverlay()
     }
+}
+
+@Composable
+private fun FaceOvalOverlay() {
+    val ovalWidth = 180.dp
+    val ovalHeight = 240.dp
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                val w = ovalWidth.toPx()
+                val h = ovalHeight.toPx()
+                val left = (size.width - w) / 2f
+                val top = (size.height - h) / 2f
+                val path = Path().apply {
+                    addOval(androidx.compose.ui.geometry.Rect(left, top, left + w, top + h))
+                }
+                drawPath(path = path, color = Color(0xFF22C55E), style = Stroke(width = 3.dp.toPx()))
+            }
+    )
 }
 
 @Composable
 private fun LivenessOverlayStatus(
     currentDirection: FacePoseDirection,
-    doneDirections: Set<FacePoseDirection>
+    requiredSequence: List<FacePoseDirection>,
+    currentStepIndex: Int
 ) {
-    val allDirections = listOf(
-        FacePoseDirection.LEFT to "Trái",
-        FacePoseDirection.RIGHT to "Phải",
-        FacePoseDirection.UP to "Lên",
-        FacePoseDirection.DOWN to "Xuống"
-    )
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -267,10 +297,32 @@ private fun LivenessOverlayStatus(
             .padding(Spacing.Sm),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("Hướng hiện tại: $currentDirection", fontWeight = FontWeight.SemiBold)
-        allDirections.forEach { (direction, label) ->
-            val done = direction in doneDirections
-            Text("${if (done) "✓" else "•"} $label", color = if (done) Color(0xFF166534) else Color(0xFF334155))
+        Text(
+            "Hướng hiện tại: ${directionLabel(currentDirection)}",
+            fontWeight = FontWeight.SemiBold
+        )
+        requiredSequence.forEachIndexed { index, direction ->
+            val stateText = when {
+                index < currentStepIndex -> "Đã hoàn thành"
+                index == currentStepIndex -> "Đang chờ thực hiện"
+                else -> "Chưa tới bước"
+            }
+            val done = index < currentStepIndex
+            Text(
+                "${if (done) "✓" else "•"} ${directionLabel(direction)} - $stateText",
+                color = if (done) Color(0xFF166534) else Color(0xFF334155)
+            )
         }
+    }
+}
+
+private fun directionLabel(direction: FacePoseDirection): String {
+    return when (direction) {
+        FacePoseDirection.LEFT -> "Trái"
+        FacePoseDirection.RIGHT -> "Phải"
+        FacePoseDirection.UP -> "Lên"
+        FacePoseDirection.DOWN -> "Xuống"
+        FacePoseDirection.CENTER -> "Chính diện"
+        FacePoseDirection.NO_FACE -> "Chưa nhận diện khuôn mặt"
     }
 }
