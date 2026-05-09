@@ -1,4 +1,4 @@
-<manifest package="com.dacn1.app" xmlns:android="http://schemas.android.com/apk/res/android">
+﻿<manifest package="com.dacn1.app" xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature
@@ -22,3 +22,4 @@
         </activity>
     </application>
 </manifest>
+

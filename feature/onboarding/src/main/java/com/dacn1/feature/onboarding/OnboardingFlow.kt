@@ -1,8 +1,8 @@
-package com.dacn1.feature.onboarding
+﻿package com.dacn1.feature.onboarding
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -120,11 +119,11 @@ private fun WelcomeScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.Md)
         ) {
             Text("Xác minh danh tính\ntrực tuyến", style = MaterialTheme.typography.headlineLarge)
-            Text("Quá trình xác minh nhanh chóng, an toàn và bảo mật với ba bước đơn giản")
+            Text("Quá trình xác minh nhanh chóng, an toàn và bảo mật với các bước đơn giản")
 
             IntroStepCard(number = "1", title = "Giấy tờ tùy thân", subtitle = "Chụp rõ hai mặt CCCD/CMND/Hộ chiếu của bạn")
-            IntroStepCard(number = "2", title = "Khuôn mặt", subtitle = "Chụp ảnh khuôn mặt của bạn với ánh sáng tốt")
-            IntroStepCard(number = "3", title = "Xác minh sống động", subtitle = "Thực hiện động tác để chứng minh đó là bạn")
+            IntroStepCard(number = "2", title = "NFC (Tùy chọn)", subtitle = "Quét chip CCCD để đối soát thêm với dữ liệu giấy tờ")
+            IntroStepCard(number = "3", title = "Xác minh bằng khuôn mặt", subtitle = "Thực hiện động tác khuôn mặt để xác nhận đúng là bạn")
 
             Spacer(modifier = Modifier.height(Spacing.Xl))
             HintCard(
@@ -216,7 +215,9 @@ private fun HintCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(14.dp).background(dotColor, RoundedCornerShape(999.dp))
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(dotColor, RoundedCornerShape(999.dp))
             )
             Column {
                 Text(title, fontWeight = FontWeight.SemiBold)
