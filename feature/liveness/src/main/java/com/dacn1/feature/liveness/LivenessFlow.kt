@@ -31,10 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -254,34 +251,12 @@ private fun PoseCameraTrackerView(
         modifier = Modifier
             .fillMaxWidth()
             .height(320.dp)
-            .background(Color(0xFF0B1220), RoundedCornerShape(16.dp))
     ) {
         AndroidView(
             factory = { previewView },
             modifier = Modifier.fillMaxSize()
         )
-        FaceOvalOverlay()
     }
-}
-
-@Composable
-private fun FaceOvalOverlay() {
-    val ovalWidth = 180.dp
-    val ovalHeight = 240.dp
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawBehind {
-                val w = ovalWidth.toPx()
-                val h = ovalHeight.toPx()
-                val left = (size.width - w) / 2f
-                val top = (size.height - h) / 2f
-                val path = Path().apply {
-                    addOval(androidx.compose.ui.geometry.Rect(left, top, left + w, top + h))
-                }
-                drawPath(path = path, color = Color(0xFF22C55E), style = Stroke(width = 3.dp.toPx()))
-            }
-    )
 }
 
 @Composable

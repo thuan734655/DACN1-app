@@ -20,7 +20,8 @@ data class FacePoseResult(
     val direction: FacePoseDirection,
     val yaw: Float = 0f,
     val pitch: Float = 0f,
-    val faceDetected: Boolean = false
+    val faceDetected: Boolean = false,
+    val faceInGuide: Boolean = false
 )
 
 class FacePoseTracker(
@@ -52,7 +53,14 @@ class FacePoseTracker(
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
         detector.process(image)
             .addOnSuccessListener { faces ->
-                onResult(resolvePose(faces, mirrorForFrontCamera))
+                onResult(
+                    resolvePose(
+                        faces = faces,
+                        mirrorForFrontCamera = mirrorForFrontCamera,
+                        frameWidth = image.width.toFloat(),
+                        frameHeight = image.height.toFloat()
+                    )
+                )
             }
             .addOnFailureListener {
                 onResult(FacePoseResult(direction = FacePoseDirection.NO_FACE))
@@ -62,7 +70,12 @@ class FacePoseTracker(
             }
     }
 
-    private fun resolvePose(faces: List<Face>, mirrorForFrontCamera: Boolean): FacePoseResult {
+    private fun resolvePose(
+        faces: List<Face>,
+        mirrorForFrontCamera: Boolean,
+        frameWidth: Float,
+        frameHeight: Float
+    ): FacePoseResult {
         val face = faces.firstOrNull()
             ?: return FacePoseResult(direction = FacePoseDirection.NO_FACE, faceDetected = false)
 
@@ -83,8 +96,30 @@ class FacePoseTracker(
             direction = direction,
             yaw = yaw,
             pitch = pitch,
-            faceDetected = true
+            faceDetected = true,
+            faceInGuide = isFaceInsideOvalGuide(face, frameWidth, frameHeight)
         )
+    }
+
+    private fun isFaceInsideOvalGuide(
+        face: Face,
+        frameWidth: Float,
+        frameHeight: Float
+    ): Boolean {
+        if (frameWidth <= 0f || frameHeight <= 0f) return false
+
+        val ovalWidth = frameWidth * 0.50f
+        val ovalHeight = frameHeight * 0.75f
+        val cx = frameWidth / 2f
+        val cy = frameHeight / 2f
+        val rx = ovalWidth / 2f
+        val ry = ovalHeight / 2f
+
+        val faceCenterX = face.boundingBox.exactCenterX()
+        val faceCenterY = face.boundingBox.exactCenterY()
+        val nx = (faceCenterX - cx) / rx
+        val ny = (faceCenterY - cy) / ry
+        return (nx * nx + ny * ny) <= 1f
     }
 
     fun close() {

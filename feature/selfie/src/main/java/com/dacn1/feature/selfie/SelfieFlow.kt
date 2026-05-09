@@ -56,6 +56,7 @@ import com.dacn1.core.designsystem.theme.Spacing
 import com.dacn1.core.model.UploadFileType
 import com.dacn1.core.repository.EkycRepository
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.io.File
@@ -291,7 +292,16 @@ private fun SelfieCameraView(
                     val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                     detector.process(image)
                         .addOnSuccessListener { faces ->
-                            onFaceDetected(faces.isNotEmpty())
+                            val frameWidth = image.width.toFloat()
+                            val frameHeight = image.height.toFloat()
+                            val inside = faces.any { face ->
+                                isFaceInsideOvalGuide(
+                                    face = face,
+                                    frameWidth = frameWidth,
+                                    frameHeight = frameHeight
+                                )
+                            }
+                            onFaceDetected(inside)
                         }
                         .addOnCompleteListener {
                             imageProxy.close()
@@ -336,6 +346,28 @@ private fun SelfieCameraView(
         factory = { previewView },
         modifier = Modifier.fillMaxSize()
     )
+}
+
+private fun isFaceInsideOvalGuide(
+    face: Face,
+    frameWidth: Float,
+    frameHeight: Float
+): Boolean {
+    if (frameWidth <= 0f || frameHeight <= 0f) return false
+
+    val ovalWidth = frameWidth * 0.50f
+    val ovalHeight = frameHeight * 0.58f
+    val cx = frameWidth / 2f
+    val cy = frameHeight / 2f
+    val rx = ovalWidth / 2f
+    val ry = ovalHeight / 2f
+
+    val faceCenterX = face.boundingBox.exactCenterX()
+    val faceCenterY = face.boundingBox.exactCenterY()
+    val nx = (faceCenterX - cx) / rx
+    val ny = (faceCenterY - cy) / ry
+
+    return (nx * nx + ny * ny) <= 1f
 }
 
 private fun captureSelfie(
