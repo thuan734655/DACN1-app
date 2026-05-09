@@ -1,0 +1,33 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+out/
+
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android local environment
+local.properties
+
+# Logs / reports
+*.log
+hs_err_pid*
+replay_pid*
+
+# Generated artifacts
+captures/
+*.apk
+*.aab
+*.ap_
+
+# Docs and non-runtime materials
+docs/
+*.md
