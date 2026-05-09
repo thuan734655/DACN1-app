@@ -90,7 +90,7 @@ private fun SplashScreen(serviceChecking: Boolean, serviceError: String?) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = "DACN1 eKYC", style = MaterialTheme.typography.headlineLarge)
+            Text(text = "DACN1 Định danh điện tử", style = MaterialTheme.typography.headlineLarge)
             Spacer(modifier = Modifier.height(Spacing.Md))
             if (serviceChecking) {
                 CircularProgressIndicator()

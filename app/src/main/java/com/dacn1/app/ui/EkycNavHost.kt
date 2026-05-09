@@ -60,6 +60,15 @@ fun EkycNavHost() {
                     sessionId = safeSessionId,
                     onCompleted = {
                         navController.navigate(Routes.SELFIE_GUIDE)
+                    },
+                    onNfcPassed = {
+                        navController.navigate(Routes.LIVENESS_GUIDE)
+                    },
+                    onExitToHome = {
+                        sessionId = null
+                        navController.navigate(Routes.SPLASH) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 )
             }

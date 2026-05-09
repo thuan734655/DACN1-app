@@ -1,9 +1,16 @@
-package com.dacn1.feature.document
+﻿package com.dacn1.feature.document
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.nfc.NfcAdapter
+import android.nfc.Tag
+import android.nfc.tech.Ndef
+import android.os.Bundle
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -61,6 +68,7 @@ import com.dacn1.core.designsystem.components.SecondaryButton
 import com.dacn1.core.designsystem.components.StatusBadge
 import com.dacn1.core.designsystem.theme.Spacing
 import com.dacn1.core.model.UploadFileType
+import com.dacn1.core.model.VerifyNfcRequest
 import com.dacn1.core.repository.EkycRepository
 import java.io.File
 import java.util.concurrent.Executor
@@ -70,14 +78,25 @@ private enum class DocumentStep {
     GUIDE,
     FRONT_CAPTURE,
     BACK_CAPTURE,
-    REVIEW
+    REVIEW,
+    NFC_VERIFY
+}
+
+private enum class NfcStage {
+    READY,
+    SCANNING,
+    VERIFYING,
+    PASSED,
+    FAILED
 }
 
 @Composable
 fun DocumentFlowRoute(
     repository: EkycRepository,
     sessionId: String,
-    onCompleted: () -> Unit
+    onCompleted: () -> Unit,
+    onNfcPassed: () -> Unit,
+    onExitToHome: () -> Unit
 ) {
     val context = LocalContext.current
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
@@ -91,10 +110,19 @@ fun DocumentFlowRoute(
     var uploading by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
+    var nfcInfo by remember { mutableStateOf<String?>(null) }
+    var nfcStage by remember { mutableStateOf(NfcStage.READY) }
+    var nfcScanning by remember { mutableStateOf(false) }
+    var nfcVerifying by remember { mutableStateOf(false) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     val warnings = remember { mutableStateListOf<String>() }
 
-    fun upload(type: UploadFileType, path: String, onSuccess: () -> Unit) {
+    fun upload(
+        type: UploadFileType,
+        path: String,
+        onSuccess: () -> Unit,
+        onQualityFailed: () -> Unit = {}
+    ) {
         uploading = true
         lastError = null
         scope.launch {
@@ -104,12 +132,16 @@ fun DocumentFlowRoute(
                     fileType = type,
                     localPath = path
                 )
-                if (response.uploaded) {
+                val qualityPassed = isDocumentQualityPassed(response.qualityCheck)
+                if (response.uploaded && qualityPassed) {
                     response.qualityCheck?.let {
                         warnings.clear()
                         warnings.add(it)
                     }
                     onSuccess()
+                } else if (response.uploaded) {
+                    lastError = "Ảnh chưa đạt tiêu chuẩn, vui lòng chụp lại."
+                    onQualityFailed()
                 } else {
                     lastError = response.error?.message ?: "Tải lên thất bại"
                 }
@@ -117,6 +149,36 @@ fun DocumentFlowRoute(
                 lastError = ex.message ?: "Không thể tải lên"
             } finally {
                 uploading = false
+            }
+        }
+    }
+
+    fun startNfcVerification() {
+        nfcInfo = null
+        nfcStage = NfcStage.SCANNING
+        nfcScanning = true
+    }
+
+    fun verifyNfcToken(token: String) {
+        nfcScanning = false
+        nfcStage = NfcStage.VERIFYING
+        nfcVerifying = true
+        scope.launch {
+            try {
+                val response = repository.verifyNfc(
+                    sessionId = sessionId,
+                    request = VerifyNfcRequest(
+                        nfcToken = token,
+                        idNumber = null
+                    )
+                )
+                nfcVerifying = false
+                nfcInfo = response.message
+                nfcStage = if (response.passed) NfcStage.PASSED else NfcStage.FAILED
+            } catch (ex: Exception) {
+                nfcVerifying = false
+                nfcStage = NfcStage.FAILED
+                nfcInfo = ex.message ?: "Không thể xác thực NFC"
             }
         }
     }
@@ -166,6 +228,8 @@ fun DocumentFlowRoute(
                                     if (frontImagePath != null) {
                                         frontImagePath = null
                                         lastError = null
+                                        nfcInfo = null
+                                        nfcStage = NfcStage.READY
                                         return@SecondaryButton
                                     }
                                     captureDocumentImage(
@@ -176,10 +240,24 @@ fun DocumentFlowRoute(
                                         onStart = {
                                             capturing = true
                                             lastError = null
+                                            nfcInfo = null
+                                            nfcStage = NfcStage.READY
                                         },
                                         onSaved = {
                                             frontImagePath = it
                                             capturing = false
+                                            upload(
+                                                type = UploadFileType.ID_FRONT,
+                                                path = it,
+                                                onSuccess = {
+                                                    frontUploaded = true
+                                                    step = DocumentStep.BACK_CAPTURE
+                                                },
+                                                onQualityFailed = {
+                                                    frontUploaded = false
+                                                    frontImagePath = null
+                                                }
+                                            )
                                         },
                                         onError = {
                                             capturing = false
@@ -191,15 +269,9 @@ fun DocumentFlowRoute(
                         }
                         Box(modifier = Modifier.weight(1f)) {
                             PrimaryButton(
-                                text = if (uploading) "Đang tải lên..." else "Xác nhận ảnh",
-                                enabled = !uploading && !capturing && !frontImagePath.isNullOrBlank(),
-                                onClick = {
-                                    val path = frontImagePath ?: return@PrimaryButton
-                                    upload(UploadFileType.ID_FRONT, path) {
-                                        frontUploaded = true
-                                        step = DocumentStep.BACK_CAPTURE
-                                    }
-                                }
+                                text = if (uploading) "Đang kiểm tra..." else "Tự động kiểm tra",
+                                enabled = false,
+                                onClick = {}
                             )
                         }
                     }
@@ -227,6 +299,8 @@ fun DocumentFlowRoute(
                                     if (backImagePath != null) {
                                         backImagePath = null
                                         lastError = null
+                                        nfcInfo = null
+                                        nfcStage = NfcStage.READY
                                         return@SecondaryButton
                                     }
                                     captureDocumentImage(
@@ -237,10 +311,24 @@ fun DocumentFlowRoute(
                                         onStart = {
                                             capturing = true
                                             lastError = null
+                                            nfcInfo = null
+                                            nfcStage = NfcStage.READY
                                         },
                                         onSaved = {
                                             backImagePath = it
                                             capturing = false
+                                            upload(
+                                                type = UploadFileType.ID_BACK,
+                                                path = it,
+                                                onSuccess = {
+                                                    backUploaded = true
+                                                    step = DocumentStep.REVIEW
+                                                },
+                                                onQualityFailed = {
+                                                    backUploaded = false
+                                                    backImagePath = null
+                                                }
+                                            )
                                         },
                                         onError = {
                                             capturing = false
@@ -252,44 +340,235 @@ fun DocumentFlowRoute(
                         }
                         Box(modifier = Modifier.weight(1f)) {
                             PrimaryButton(
-                                text = if (uploading) "Đang tải lên..." else "Xác nhận ảnh",
-                                enabled = !uploading && !capturing && !backImagePath.isNullOrBlank(),
-                                onClick = {
-                                    val path = backImagePath ?: return@PrimaryButton
-                                    upload(UploadFileType.ID_BACK, path) {
-                                        backUploaded = true
-                                        step = DocumentStep.REVIEW
-                                    }
-                                }
+                                text = if (uploading) "Đang kiểm tra..." else "Tự động kiểm tra",
+                                enabled = false,
+                                onClick = {}
                             )
                         }
                     }
                 }
 
                 DocumentStep.REVIEW -> {
-                    Text("Xem lại giấy tờ", style = MaterialTheme.typography.headlineLarge)
-                    ReviewRow(
-                        title = "Mặt trước",
-                        passed = frontUploaded,
-                        imagePath = frontImagePath
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Md)
+                    ) {
+                        Text("Xem lại giấy tờ", style = MaterialTheme.typography.headlineLarge)
+                        ReviewRow(
+                            title = "Mặt trước",
+                            passed = frontUploaded,
+                            imagePath = frontImagePath
+                        )
+                        ReviewRow(
+                            title = "Mặt sau",
+                            passed = backUploaded,
+                            imagePath = backImagePath
+                        )
+                        if (lastError != null) Text(lastError ?: "", color = MaterialTheme.colorScheme.error)
+                        if (nfcInfo != null) Text(nfcInfo ?: "", color = Color(0xFF0F766E))
+                    }
+                    SecondaryButton(
+                        text = "Chụp lại",
+                        onClick = {
+                            nfcInfo = null
+                            nfcStage = NfcStage.READY
+                            step = DocumentStep.FRONT_CAPTURE
+                        }
                     )
-                    ReviewRow(
-                        title = "Mặt sau",
-                        passed = backUploaded,
-                        imagePath = backImagePath
+                    SecondaryButton(
+                        text = "Xác thực qua NFC",
+                        enabled = frontUploaded && backUploaded,
+                        onClick = {
+                            nfcInfo = null
+                            nfcStage = NfcStage.READY
+                            step = DocumentStep.NFC_VERIFY
+                        }
                     )
-                    if (lastError != null) Text(lastError ?: "", color = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.weight(1f))
-                    SecondaryButton(text = "Chụp lại", onClick = { step = DocumentStep.FRONT_CAPTURE })
                     PrimaryButton(
                         text = "Tiếp tục selfie",
                         enabled = frontUploaded && backUploaded,
-                        onClick = onCompleted
+                        onClick = {
+                            nfcInfo = null
+                            nfcStage = NfcStage.READY
+                            onCompleted()
+                        }
                     )
+                }
+
+                DocumentStep.NFC_VERIFY -> {
+                    val nfcAdapter = remember(context) { NfcAdapter.getDefaultAdapter(context) }
+                    val hostActivity = remember(context) { context.findActivity() }
+                    val nfcUnsupported = nfcAdapter == null
+                    val nfcDisabled = nfcAdapter?.isEnabled == false
+
+                    if (nfcScanning && nfcAdapter != null && hostActivity != null) {
+                        NfcReaderEffect(
+                            activity = hostActivity,
+                            nfcAdapter = nfcAdapter,
+                            onTagRead = { token ->
+                                verifyNfcToken(token)
+                            },
+                            onError = { msg ->
+                                nfcScanning = false
+                                nfcStage = NfcStage.FAILED
+                                nfcInfo = msg
+                            }
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Md)
+                    ) {
+                        Text("Xác thực NFC", style = MaterialTheme.typography.headlineLarge)
+                        Text("Đặt CCCD có chip sát mặt lưng điện thoại để quét NFC.")
+                        if (nfcUnsupported) {
+                            Text("Thiết bị không hỗ trợ NFC.", color = MaterialTheme.colorScheme.error)
+                        } else if (nfcDisabled) {
+                            Text("NFC đang tắt. Vui lòng bật NFC trong cài đặt.", color = MaterialTheme.colorScheme.error)
+                        }
+
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(Spacing.Md),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val statusText = when (nfcStage) {
+                                    NfcStage.READY -> "Sẵn sàng quét NFC"
+                                    NfcStage.SCANNING -> "Đang quét NFC trên thiết bị..."
+                                    NfcStage.VERIFYING -> "Đang gửi server giải mã và đối soát..."
+                                    NfcStage.PASSED -> "Thông tin NFC khớp dữ liệu giấy tờ"
+                                    NfcStage.FAILED -> "Thông tin NFC không khớp"
+                                }
+                                Text(statusText, fontWeight = FontWeight.SemiBold)
+                                nfcInfo?.let { Text(it, color = Color(0xFF334155)) }
+                            }
+                        }
+
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(Spacing.Md),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("Lưu ý", fontWeight = FontWeight.SemiBold, color = Color(0xFF92400E))
+                                Text("- Bật NFC trên điện thoại", color = Color(0xFF92400E))
+                                Text("- Giữ thẻ cố định 2-3 giây khi quét", color = Color(0xFF92400E))
+                                Text("- Không rút thẻ trong lúc đang xác minh", color = Color(0xFF92400E))
+                            }
+                        }
+                    }
+
+                    SecondaryButton(
+                        text = "Quay lại",
+                        enabled = !nfcScanning && !nfcVerifying,
+                        onClick = {
+                            nfcInfo = null
+                            nfcStage = NfcStage.READY
+                            step = DocumentStep.REVIEW
+                        }
+                    )
+
+                    if (nfcStage == NfcStage.PASSED) {
+                        PrimaryButton(
+                            text = "Tiếp tục quay video",
+                            onClick = onNfcPassed
+                        )
+                    } else if (nfcStage == NfcStage.FAILED) {
+                        PrimaryButton(
+                            text = "Về màn hình chính",
+                            onClick = onExitToHome
+                        )
+                    } else {
+                        PrimaryButton(
+                            text = if (nfcScanning || nfcVerifying) "Đang xử lý..." else "Bắt đầu quét NFC",
+                            enabled = !nfcScanning && !nfcVerifying && !nfcUnsupported && !nfcDisabled,
+                            onClick = { startNfcVerification() }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+private fun isDocumentQualityPassed(qualityCheck: String?): Boolean {
+    if (qualityCheck.isNullOrBlank()) return false
+    val normalized = qualityCheck.uppercase()
+    return normalized == "DOC_FRAME_OK" || normalized == "DOC_BACK_OK" || normalized.endsWith("_OK")
+}
+
+@Composable
+private fun NfcReaderEffect(
+    activity: Activity,
+    nfcAdapter: NfcAdapter,
+    onTagRead: (String) -> Unit,
+    onError: (String) -> Unit
+) {
+    DisposableEffect(activity, nfcAdapter) {
+        val callback = NfcAdapter.ReaderCallback { tag ->
+            try {
+                val token = buildNfcToken(tag)
+                activity.runOnUiThread { onTagRead(token) }
+            } catch (ex: Exception) {
+                activity.runOnUiThread { onError(ex.message ?: "Không đọc được dữ liệu NFC") }
+            }
+        }
+
+        val flags = NfcAdapter.FLAG_READER_NFC_A or
+            NfcAdapter.FLAG_READER_NFC_B or
+            NfcAdapter.FLAG_READER_NFC_F or
+            NfcAdapter.FLAG_READER_NFC_V or
+            NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
+        val options = Bundle().apply {
+            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 100)
+        }
+
+        try {
+            nfcAdapter.enableReaderMode(activity, callback, flags, options)
+        } catch (_: Exception) {
+            onError("Không thể bật chế độ đọc NFC")
+        }
+
+        onDispose {
+            try {
+                nfcAdapter.disableReaderMode(activity)
+            } catch (_: Exception) {
+                // Ignore
+            }
+        }
+    }
+}
+
+private fun buildNfcToken(tag: Tag): String {
+    val tagIdHex = tag.id?.joinToString("") { b -> "%02X".format(b) } ?: "UNKNOWN"
+    val techs = tag.techList.joinToString(",")
+    val ndefMessage = runCatching {
+        val ndef = Ndef.get(tag)
+        ndef?.cachedNdefMessage
+    }.getOrNull()
+    val payloadBytes = ndefMessage?.toByteArray() ?: ByteArray(0)
+    val payloadBase64 = Base64.encodeToString(payloadBytes, Base64.NO_WRAP)
+    return "tag_id=$tagIdHex;tech=$techs;ndef_b64=$payloadBase64"
+}
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable
@@ -499,9 +778,9 @@ private fun ReviewRow(
             ) {
                 Text(title)
                 if (passed) {
-                    StatusBadge(text = "UPLOADED", type = BadgeType.Success)
+                    StatusBadge(text = "ĐÃ TẢI LÊN", type = BadgeType.Success)
                 } else {
-                    StatusBadge(text = "PENDING", type = BadgeType.Warning)
+                    StatusBadge(text = "CHƯA TẢI LÊN", type = BadgeType.Warning)
                 }
             }
 
@@ -549,3 +828,4 @@ private fun ReviewRow(
         )
     }
 }
+

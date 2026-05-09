@@ -1,11 +1,15 @@
 <manifest package="com.dacn1.app" xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
 
     <application
         android:name=".EkycApp"
         android:allowBackup="true"
         android:icon="@android:drawable/sym_def_app_icon"
-        android:label="DACN1 eKYC"
+        android:label="DACN1 Định danh điện tử"
         android:supportsRtl="true"
         android:theme="@style/Theme.Dacn1">
         <activity

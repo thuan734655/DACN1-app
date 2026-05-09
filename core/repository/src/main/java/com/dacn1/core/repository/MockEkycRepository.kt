@@ -17,6 +17,8 @@ import com.dacn1.core.model.SubmitSessionRequest
 import com.dacn1.core.model.SubmitSessionResponse
 import com.dacn1.core.model.UploadFileResponse
 import com.dacn1.core.model.UploadFileType
+import com.dacn1.core.model.VerifyNfcRequest
+import com.dacn1.core.model.VerifyNfcResponse
 import com.dacn1.core.model.VerificationResult
 import kotlinx.coroutines.delay
 import java.util.UUID
@@ -28,7 +30,8 @@ class MockEkycRepository(
     private data class SessionState(
         var status: EkycSessionStatus,
         var statusCursor: Int,
-        val uploaded: MutableSet<UploadFileType>
+        val uploaded: MutableSet<UploadFileType>,
+        val uploadAttempts: MutableMap<UploadFileType, Int>
     )
 
     private val sessions = mutableMapOf<String, SessionState>()
@@ -39,7 +42,8 @@ class MockEkycRepository(
         sessions[sessionId] = SessionState(
             status = EkycSessionStatus.CREATED,
             statusCursor = 0,
-            uploaded = mutableSetOf()
+            uploaded = mutableSetOf(),
+            uploadAttempts = mutableMapOf()
         )
         return CreateSessionResponse(sessionId = sessionId, status = EkycSessionStatus.CREATED)
     }
@@ -57,14 +61,20 @@ class MockEkycRepository(
             error = EkycError("SESSION_NOT_FOUND", "Session not found", retryable = false)
         )
 
-        state.uploaded.add(fileType)
         state.status = EkycSessionStatus.COLLECTING
+        val attempt = (state.uploadAttempts[fileType] ?: 0) + 1
+        state.uploadAttempts[fileType] = attempt
 
         val qualityCheck = when (fileType) {
-            UploadFileType.ID_FRONT -> "DOC_FRAME_OK"
-            UploadFileType.ID_BACK -> "DOC_BACK_OK"
+            UploadFileType.ID_FRONT -> if (attempt == 1) "DOC_BLURRY" else "DOC_FRAME_OK"
+            UploadFileType.ID_BACK -> if (attempt == 1) "DOC_GLARE" else "DOC_BACK_OK"
             UploadFileType.SELFIE -> "FACE_FRAME_OK"
             UploadFileType.LIVENESS_VIDEO -> "LIVENESS_FRAME_OK"
+        }
+
+        val qualityPassed = qualityCheck.endsWith("_OK")
+        if (qualityPassed) {
+            state.uploaded.add(fileType)
         }
 
         return UploadFileResponse(
@@ -162,6 +172,38 @@ class MockEkycRepository(
             MockScenario.REVIEW_FACE -> reviewFaceResult(sessionId)
             MockScenario.TIMEOUT -> timeoutResult(sessionId)
         }
+    }
+
+    override suspend fun verifyNfc(sessionId: String, request: VerifyNfcRequest): VerifyNfcResponse {
+        delay(config.networkDelayMs)
+        val state = sessions[sessionId] ?: return VerifyNfcResponse(
+            sessionId = sessionId,
+            passed = false,
+            message = "Phiên không tồn tại",
+            error = EkycError("SESSION_NOT_FOUND", "Session not found", retryable = false)
+        )
+
+        val passed = when (config.scenario) {
+            MockScenario.PASSED -> true
+            MockScenario.REVIEW_FACE, MockScenario.FAILED_LIVENESS, MockScenario.TIMEOUT -> false
+        }
+
+        if (passed) {
+            state.status = EkycSessionStatus.COLLECTING
+            return VerifyNfcResponse(
+                sessionId = sessionId,
+                passed = true,
+                message = "Thông tin NFC khớp với giấy tờ.",
+                matchedFields = listOf("id_number", "full_name", "dob")
+            )
+        }
+
+        return VerifyNfcResponse(
+            sessionId = sessionId,
+            passed = false,
+            message = "Thông tin NFC không khớp với dữ liệu giấy tờ.",
+            error = EkycError("NFC_MISMATCH", "NFC data mismatch", retryable = false)
+        )
     }
 
     override suspend fun getErrorCatalog(): List<ErrorCatalogItem> {

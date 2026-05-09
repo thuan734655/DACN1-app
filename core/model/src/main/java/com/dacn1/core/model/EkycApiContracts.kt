@@ -46,3 +46,16 @@ data class ResultResponse(
     val liveness: Liveness? = null,
     val errors: List<EkycError> = emptyList()
 )
+
+data class VerifyNfcRequest(
+    val nfcToken: String,
+    val idNumber: String? = null
+)
+
+data class VerifyNfcResponse(
+    val sessionId: String,
+    val passed: Boolean,
+    val message: String,
+    val matchedFields: List<String> = emptyList(),
+    val error: EkycError? = null
+)

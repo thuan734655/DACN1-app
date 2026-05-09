@@ -9,6 +9,8 @@ import com.dacn1.core.model.SubmitSessionRequest
 import com.dacn1.core.model.SubmitSessionResponse
 import com.dacn1.core.model.UploadFileResponse
 import com.dacn1.core.model.UploadFileType
+import com.dacn1.core.model.VerifyNfcRequest
+import com.dacn1.core.model.VerifyNfcResponse
 import com.dacn1.core.model.VerificationResult
 
 interface EkycRepository {
@@ -17,6 +19,7 @@ interface EkycRepository {
     suspend fun submitSession(sessionId: String, request: SubmitSessionRequest = SubmitSessionRequest()): SubmitSessionResponse
     suspend fun getStatus(sessionId: String): StatusResponse
     suspend fun getResult(sessionId: String): ResultResponse
+    suspend fun verifyNfc(sessionId: String, request: VerifyNfcRequest): VerifyNfcResponse
     suspend fun getErrorCatalog(): List<ErrorCatalogItem>
     suspend fun getHistory(): List<VerificationResult>
 }
