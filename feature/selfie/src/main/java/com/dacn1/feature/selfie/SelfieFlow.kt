@@ -67,6 +67,7 @@ import kotlinx.coroutines.launch
 fun SelfieFlowRoute(
     repository: EkycRepository,
     sessionId: String,
+    frontFileId: String?,
     onCompleted: () -> Unit
 ) {
     val context = LocalContext.current
@@ -80,6 +81,44 @@ fun SelfieFlowRoute(
     var uploading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var uploaded by remember { mutableStateOf(false) }
+
+    var showErrorPopup by remember { mutableStateOf<String?>(null) }
+
+    fun processCapturedSelfie(path: String) {
+        uploading = true
+        errorMessage = null
+        scope.launch {
+            try {
+                val response = repository.uploadFile(
+                    sessionId = sessionId,
+                    fileType = UploadFileType.SELFIE,
+                    localPath = path
+                )
+                if (response.uploaded) {
+                    if (frontFileId != null && response.file_id != null) {
+                        val matchRes = repository.processFaceMatch(
+                            sessionId = sessionId,
+                            documentFaceFileId = frontFileId,
+                            selfieFileId = response.file_id!!
+                        )
+                        if (matchRes.matched) {
+                            onCompleted()
+                        } else {
+                            showErrorPopup = "Khuôn mặt không khớp (Độ tương đồng: ${matchRes.similarity})"
+                        }
+                    } else {
+                        onCompleted()
+                    }
+                } else {
+                    showErrorPopup = response.error?.message ?: "Không thể tải ảnh selfie"
+                }
+            } catch (ex: Exception) {
+                showErrorPopup = ex.message ?: "Lỗi kết nối khi tải ảnh selfie"
+            } finally {
+                uploading = false
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -143,6 +182,7 @@ fun SelfieFlowRoute(
                             onSaved = {
                                 capturedPath = it
                                 capturing = false
+                                processCapturedSelfie(it)
                             },
                             onError = {
                                 errorMessage = it
@@ -152,46 +192,17 @@ fun SelfieFlowRoute(
                     }
                 )
             } else {
-                SecondaryButton(
-                    text = "Chụp lại",
-                    enabled = !uploading,
-                    onClick = {
-                        capturedPath = null
-                        uploaded = false
-                        errorMessage = null
+                if (uploading) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                        )
+                        Text("Đang xử lý ảnh...", color = Color.White, modifier = Modifier.padding(top = Spacing.Sm))
                     }
-                )
-                PrimaryButton(
-                    text = if (uploaded) "Tiếp tục xác thực" else if (uploading) "Đang tải ảnh..." else "Xác nhận ảnh",
-                    enabled = !uploading,
-                    onClick = {
-                        if (uploaded) {
-                            onCompleted()
-                            return@PrimaryButton
-                        }
-                        val path = capturedPath ?: return@PrimaryButton
-                        uploading = true
-                        errorMessage = null
-                        scope.launch {
-                            try {
-                                val response = repository.uploadFile(
-                                    sessionId = sessionId,
-                                    fileType = UploadFileType.SELFIE,
-                                    localPath = path
-                                )
-                                if (response.uploaded) {
-                                    uploaded = true
-                                } else {
-                                    errorMessage = response.error?.message ?: "Không thể tải ảnh selfie"
-                                }
-                            } catch (ex: Exception) {
-                                errorMessage = ex.message ?: "Không thể tải ảnh selfie"
-                            } finally {
-                                uploading = false
-                            }
-                        }
-                    }
-                )
+                }
             }
 
             Text(
@@ -200,6 +211,24 @@ fun SelfieFlowRoute(
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
         }
+    }
+
+    if (showErrorPopup != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { /* Do nothing */ },
+            title = { Text("Khuôn mặt không hợp lệ") },
+            text = { Text(showErrorPopup!!) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showErrorPopup = null
+                        capturedPath = null
+                    }
+                ) {
+                    Text("Chụp lại")
+                }
+            }
+        )
     }
 }
 

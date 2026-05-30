@@ -13,6 +13,7 @@ import com.dacn1.core.model.VerifyNfcRequest
 import com.dacn1.core.model.VerifyNfcResponse
 import com.dacn1.core.model.VerificationResult
 import com.dacn1.core.model.OcrResponse
+import com.dacn1.core.model.FaceMatchResponse
 
 interface EkycRepository {
     suspend fun createSession(request: CreateSessionRequest): CreateSessionResponse
@@ -23,6 +24,7 @@ interface EkycRepository {
     suspend fun verifyNfc(sessionId: String, request: VerifyNfcRequest): VerifyNfcResponse
     suspend fun getErrorCatalog(): List<ErrorCatalogItem>
     suspend fun getHistory(): List<VerificationResult>
+    suspend fun processFaceMatch(sessionId: String, documentFaceFileId: String, selfieFileId: String): FaceMatchResponse
     suspend fun processOcr(
         sessionId: String, 
         frontFileId: String,

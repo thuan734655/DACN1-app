@@ -3,6 +3,8 @@ package com.dacn1.core.network
 import com.dacn1.core.model.CreateSessionRequest
 import com.dacn1.core.model.CreateSessionResponse
 import com.dacn1.core.model.ErrorCatalogItem
+import com.dacn1.core.model.FaceMatchRequest
+import com.dacn1.core.model.FaceMatchResponse
 import com.dacn1.core.model.OcrRequest
 import com.dacn1.core.model.OcrResponse
 import com.dacn1.core.model.ResultResponse
@@ -62,4 +64,10 @@ interface EkycApiService {
         @Path("session_id") sessionId: String,
         @Body request: OcrRequest
     ): OcrResponse
+
+    @POST("/v1/ekyc/sessions/{session_id}/face-match")
+    suspend fun processFaceMatch(
+        @Path("session_id") sessionId: String,
+        @Body request: FaceMatchRequest
+    ): FaceMatchResponse
 }

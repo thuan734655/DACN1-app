@@ -114,6 +114,17 @@ class RemoteEkycRepository(
         }
     }
 
+    override suspend fun processFaceMatch(
+        sessionId: String,
+        documentFaceFileId: String,
+        selfieFileId: String
+    ): com.dacn1.core.model.FaceMatchResponse {
+        return withContext(Dispatchers.IO) {
+            val request = com.dacn1.core.model.FaceMatchRequest(documentFaceFileId, selfieFileId)
+            apiService.processFaceMatch(sessionId, request)
+        }
+    }
+
     override suspend fun processOcr(
         sessionId: String,
         frontFileId: String,

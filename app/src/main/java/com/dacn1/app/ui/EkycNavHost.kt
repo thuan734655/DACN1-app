@@ -156,6 +156,7 @@ fun EkycNavHost() {
                 SelfieFlowRoute(
                     repository = repository,
                     sessionId = safeSessionId,
+                    frontFileId = frontFileId,
                     onCompleted = { navController.navigate(Routes.LIVENESS_GUIDE) }
                 )
             }

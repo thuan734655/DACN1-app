@@ -242,6 +242,20 @@ class MockEkycRepository(
         )
     }
 
+    override suspend fun processFaceMatch(
+        sessionId: String,
+        documentFaceFileId: String,
+        selfieFileId: String
+    ): com.dacn1.core.model.FaceMatchResponse {
+        delay(config.networkDelayMs)
+        return com.dacn1.core.model.FaceMatchResponse(
+            matched = true,
+            similarity = 0.95,
+            threshold = 0.75,
+            quality = com.dacn1.core.model.FaceMatchQuality(0.1, 0.8)
+        )
+    }
+
     override suspend fun processOcr(
         sessionId: String,
         frontFileId: String,

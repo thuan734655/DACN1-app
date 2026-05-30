@@ -67,6 +67,23 @@ data class OcrRequest(
     val qr: String? = null
 )
 
+data class FaceMatchRequest(
+    val document_face_file_id: String,
+    val selfie_file_id: String
+)
+
+data class FaceMatchResponse(
+    val matched: Boolean,
+    val similarity: Double,
+    val threshold: Double,
+    val quality: FaceMatchQuality? = null
+)
+
+data class FaceMatchQuality(
+    val selfie_blur: Double,
+    val selfie_brightness: Double
+)
+
 data class OcrResponse(
     val success: String,
     val fields: Map<String, String>? = null,
