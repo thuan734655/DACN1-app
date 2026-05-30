@@ -1,4 +1,4 @@
-﻿package com.dacn1.feature.onboarding
+package com.dacn1.feature.onboarding
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -152,7 +152,12 @@ private fun WelcomeScreen(
                                     appVersion = "1.0.0"
                                 )
                             )
-                            onContinue(response.sessionId)
+                            val sId = response.sessionId
+                            if (sId.isNullOrBlank()) {
+                                errorMessage = "Lỗi: Server không trả về session_id"
+                            } else {
+                                onContinue(sId)
+                            }
                         } catch (ex: Exception) {
                             errorMessage = ex.message ?: "Không thể tạo phiên eKYC"
                         } finally {

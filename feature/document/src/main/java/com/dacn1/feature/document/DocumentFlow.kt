@@ -1,4 +1,4 @@
-﻿package com.dacn1.feature.document
+package com.dacn1.feature.document
 
 import android.Manifest
 import android.app.Activity
@@ -96,7 +96,8 @@ fun DocumentFlowRoute(
     sessionId: String,
     onCompleted: () -> Unit,
     onNfcPassed: () -> Unit,
-    onExitToHome: () -> Unit
+    onExitToHome: () -> Unit,
+    onOcrProcessTriggered: (String, String) -> Unit
 ) {
     val context = LocalContext.current
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
@@ -107,9 +108,13 @@ fun DocumentFlowRoute(
     var backUploaded by remember { mutableStateOf(false) }
     var frontImagePath by remember { mutableStateOf<String?>(null) }
     var backImagePath by remember { mutableStateOf<String?>(null) }
+    var frontFileId by remember { mutableStateOf<String?>(null) }
+    var backFileId by remember { mutableStateOf<String?>(null) }
     var uploading by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
+    var showOcrErrorPopup by remember { mutableStateOf<String?>(null) }
+    var isProcessingOcr by remember { mutableStateOf(false) }
     var nfcInfo by remember { mutableStateOf<String?>(null) }
     var nfcStage by remember { mutableStateOf(NfcStage.READY) }
     var nfcScanning by remember { mutableStateOf(false) }
@@ -132,16 +137,14 @@ fun DocumentFlowRoute(
                     fileType = type,
                     localPath = path
                 )
-                val qualityPassed = isDocumentQualityPassed(response.qualityCheck)
-                if (response.uploaded && qualityPassed) {
+                if (response.uploaded) {
+                    if (type == UploadFileType.ID_FRONT) frontFileId = response.file_id
+                    if (type == UploadFileType.ID_BACK) backFileId = response.file_id
                     response.qualityCheck?.let {
                         warnings.clear()
                         warnings.add(it)
                     }
                     onSuccess()
-                } else if (response.uploaded) {
-                    lastError = "Ảnh chưa đạt tiêu chuẩn, vui lòng chụp lại."
-                    onQualityFailed()
                 } else {
                     lastError = response.error?.message ?: "Tải lên thất bại"
                 }
@@ -359,12 +362,14 @@ fun DocumentFlowRoute(
                         ReviewRow(
                             title = "Mặt trước",
                             passed = frontUploaded,
-                            imagePath = frontImagePath
+                            imagePath = frontImagePath,
+                            fileId = frontFileId
                         )
                         ReviewRow(
                             title = "Mặt sau",
                             passed = backUploaded,
-                            imagePath = backImagePath
+                            imagePath = backImagePath,
+                            fileId = backFileId
                         )
                         if (lastError != null) Text(lastError ?: "", color = MaterialTheme.colorScheme.error)
                         if (nfcInfo != null) Text(nfcInfo ?: "", color = Color(0xFF0F766E))
@@ -387,12 +392,39 @@ fun DocumentFlowRoute(
                         }
                     )
                     PrimaryButton(
-                        text = "Tiếp tục selfie",
+                        text = "Xác thực CCCD",
                         enabled = frontUploaded && backUploaded,
+                        isLoading = isProcessingOcr,
                         onClick = {
                             nfcInfo = null
                             nfcStage = NfcStage.READY
-                            onCompleted()
+                            isProcessingOcr = true
+                            scope.launch {
+                                try {
+                                    val response = repository.processOcr(
+                                        sessionId = sessionId,
+                                        frontFileId = frontFileId!!,
+                                        backFileId = backFileId!!,
+                                        qrLocalPath = null
+                                    )
+                                    if (response.success == "process") {
+                                        onOcrProcessTriggered(frontFileId!!, backFileId!!)
+                                    } else if (response.success == "true" || response.success == "done") {
+                                        onCompleted()
+                                    } else {
+                                        val warningMsg = response.warnings?.joinToString(", ")
+                                        showOcrErrorPopup = if (!warningMsg.isNullOrBlank()) {
+                                            "Lỗi OCR: $warningMsg"
+                                        } else {
+                                            "Lỗi OCR: Thất bại, vui lòng chụp lại"
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    showOcrErrorPopup = "Lỗi kết nối OCR: ${e.message}"
+                                } finally {
+                                    isProcessingOcr = false
+                                }
+                            }
                         }
                     )
                 }
@@ -502,6 +534,29 @@ fun DocumentFlowRoute(
                 }
             }
         }
+    }
+    if (showOcrErrorPopup != null) {
+        AlertDialog(
+            onDismissRequest = { /* Do nothing */ },
+            title = { Text("Lỗi Xác thực OCR") },
+            text = { Text(showOcrErrorPopup!!) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showOcrErrorPopup = null
+                        frontImagePath = null
+                        backImagePath = null
+                        frontFileId = null
+                        backFileId = null
+                        frontUploaded = false
+                        backUploaded = false
+                        step = DocumentStep.FRONT_CAPTURE
+                    }
+                ) {
+                    Text("Đồng ý (Chụp lại)")
+                }
+            }
+        )
     }
 }
 
@@ -757,7 +812,8 @@ private fun ReviewRow(title: String, passed: Boolean) {
 private fun ReviewRow(
     title: String,
     passed: Boolean,
-    imagePath: String?
+    imagePath: String?,
+    fileId: String? = null
 ) {
     var showPreview by remember(imagePath) { mutableStateOf(false) }
     val bitmap = remember(imagePath) {
@@ -782,6 +838,13 @@ private fun ReviewRow(
                 } else {
                     StatusBadge(text = "CHƯA TẢI LÊN", type = BadgeType.Warning)
                 }
+            }
+            if (fileId != null) {
+                Text(
+                    text = "ID: $fileId",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
             }
 
             if (bitmap != null) {

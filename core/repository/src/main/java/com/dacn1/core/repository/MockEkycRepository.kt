@@ -10,6 +10,7 @@ import com.dacn1.core.model.FaceMatch
 import com.dacn1.core.model.FinalDecision
 import com.dacn1.core.model.Liveness
 import com.dacn1.core.model.OcrFields
+import com.dacn1.core.model.OcrResponse
 import com.dacn1.core.model.ProcessingStep
 import com.dacn1.core.model.ResultResponse
 import com.dacn1.core.model.StatusResponse
@@ -66,8 +67,8 @@ class MockEkycRepository(
         state.uploadAttempts[fileType] = attempt
 
         val qualityCheck = when (fileType) {
-            UploadFileType.ID_FRONT -> if (attempt == 1) "DOC_BLURRY" else "DOC_FRAME_OK"
-            UploadFileType.ID_BACK -> if (attempt == 1) "DOC_GLARE" else "DOC_BACK_OK"
+            UploadFileType.ID_FRONT -> "DOC_FRAME_OK"
+            UploadFileType.ID_BACK -> "DOC_BACK_OK"
             UploadFileType.SELFIE -> "FACE_FRAME_OK"
             UploadFileType.LIVENESS_VIDEO -> "LIVENESS_FRAME_OK"
         }
@@ -239,6 +240,20 @@ class MockEkycRepository(
                 errors = listOf(EkycError("FACE_MISMATCH", "Face match in gray zone", true, BadgeLevel.WARNING))
             )
         )
+    }
+
+    override suspend fun processOcr(
+        sessionId: String,
+        frontFileId: String,
+        backFileId: String,
+        qrLocalPath: String?
+    ): OcrResponse {
+        delay(config.networkDelayMs)
+        return if (qrLocalPath == null) {
+            OcrResponse(success = "process")
+        } else {
+            OcrResponse(success = "done")
+        }
     }
 
     private fun passedResult(sessionId: String): ResultResponse = ResultResponse(

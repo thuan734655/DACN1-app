@@ -8,14 +8,15 @@ data class CreateSessionRequest(
 )
 
 data class CreateSessionResponse(
-    val sessionId: String,
-    val status: EkycSessionStatus
+    val sessionId: String? = null,
+    val status: EkycSessionStatus? = null
 )
 
 data class UploadFileResponse(
     val sessionId: String,
     val fileType: UploadFileType,
     val uploaded: Boolean,
+    val file_id: String? = null,
     val qualityCheck: String? = null,
     val error: EkycError? = null
 )
@@ -58,4 +59,17 @@ data class VerifyNfcResponse(
     val message: String,
     val matchedFields: List<String> = emptyList(),
     val error: EkycError? = null
+)
+
+data class OcrRequest(
+    val front_file_id: String,
+    val back_file_id: String,
+    val qr: String? = null
+)
+
+data class OcrResponse(
+    val success: String,
+    val fields: Map<String, String>? = null,
+    val confidence: Double? = null,
+    val warnings: List<String>? = null
 )
