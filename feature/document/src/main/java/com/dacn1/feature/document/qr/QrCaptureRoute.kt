@@ -103,6 +103,14 @@ fun QrCaptureRoute(
                             ContextCompat.getMainExecutor(context),
                             object : ImageCapture.OnImageSavedCallback {
                                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                    // Dừng camera (đóng băng hình ảnh)
+                                    try {
+                                        val provider = ProcessCameraProvider.getInstance(context).get()
+                                        provider.unbindAll()
+                                    } catch (e: Exception) {
+                                        // Bỏ qua lỗi unbind
+                                    }
+
                                     coroutineScope.launch {
                                         try {
                                             val response = repository.processOcr(
