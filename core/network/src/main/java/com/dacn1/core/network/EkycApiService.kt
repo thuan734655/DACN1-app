@@ -47,11 +47,16 @@ interface EkycApiService {
     @GET("/v1/ekyc/sessions/{session_id}/result")
     suspend fun getResult(@Path("session_id") sessionId: String): ResultResponse
 
-    @POST("/v1/ekyc/sessions/{session_id}/nfc")
+    @POST("/v1/ekyc/sessions/{session_id}/nfc/verify")
     suspend fun verifyNfc(
         @Path("session_id") sessionId: String,
         @Body request: VerifyNfcRequest
     ): VerifyNfcResponse
+
+    @GET("/v1/ekyc/sessions/{session_id}/nfc/key")
+    suspend fun getNfcKey(
+        @Path("session_id") sessionId: String
+    ): com.dacn1.core.model.NfcKeyResponse
 
     @GET("/v1/ekyc/errors")
     suspend fun getErrorCatalog(): List<ErrorCatalogItem>

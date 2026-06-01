@@ -61,6 +61,11 @@ data class VerifyNfcResponse(
     val error: EkycError? = null
 )
 
+data class NfcKeyResponse(
+    val session_id: String,
+    val key: String
+)
+
 data class OcrRequest(
     val front_file_id: String,
     val back_file_id: String,

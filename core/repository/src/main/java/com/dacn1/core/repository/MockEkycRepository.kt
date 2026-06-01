@@ -353,4 +353,9 @@ class MockEkycRepository(
             )
         )
     )
+
+    override suspend fun getNfcKey(sessionId: String): com.dacn1.core.model.NfcKeyResponse {
+        delay(1000)
+        return com.dacn1.core.model.NfcKeyResponse(sessionId, "mock_synthetic_nfc_key_123")
+    }
 }

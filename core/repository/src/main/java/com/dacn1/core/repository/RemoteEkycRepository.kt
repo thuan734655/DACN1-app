@@ -94,6 +94,16 @@ class RemoteEkycRepository(
         }
     }
 
+    override suspend fun getNfcKey(sessionId: String): com.dacn1.core.model.NfcKeyResponse {
+        return withContext(Dispatchers.IO) {
+            try {
+                apiService.getNfcKey(sessionId)
+            } catch (e: Exception) {
+                com.dacn1.core.model.NfcKeyResponse(sessionId, "error_key")
+            }
+        }
+    }
+
     override suspend fun getErrorCatalog(): List<ErrorCatalogItem> {
         return withContext(Dispatchers.IO) {
             try {

@@ -37,4 +37,8 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
+
+    // JMRTD and NFC
+    implementation("org.jmrtd:jmrtd:0.7.31")
+    implementation("net.sf.scuba:scuba-sc-android:0.0.22")
 }

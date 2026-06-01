@@ -23,6 +23,7 @@ import com.dacn1.feature.onboarding.OnboardingFlowRoute
 import com.dacn1.feature.selfie.SelfieFlowRoute
 import com.dacn1.feature.verification.VerificationFlowRoute
 import com.dacn1.app.ui.config.ServerConfigScreen
+import com.dacn1.feature.document.NfcFlowRoute
 import com.dacn1.feature.document.qr.QrCaptureRoute
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
@@ -90,10 +91,7 @@ fun EkycNavHost() {
                     repository = repository,
                     sessionId = safeSessionId,
                     onCompleted = {
-                        navController.navigate(Routes.SELFIE_GUIDE)
-                    },
-                    onNfcPassed = {
-                        navController.navigate(Routes.LIVENESS_GUIDE)
+                        navController.navigate(Routes.NFC_VERIFY)
                     },
                     onExitToHome = {
                         sessionId = null
@@ -127,7 +125,7 @@ fun EkycNavHost() {
                     backFileId = backFileId,
                     repository = repository,
                     onCompleted = {
-                        navController.navigate(Routes.SELFIE_GUIDE) {
+                        navController.navigate(Routes.NFC_VERIFY) {
                             popUpTo(Routes.QR_CAPTURE) { inclusive = true }
                         }
                     },
@@ -141,6 +139,38 @@ fun EkycNavHost() {
                 )
             }
         }
+        composable(Routes.NFC_VERIFY) {
+            val safeSessionId = sessionId
+            if (safeSessionId.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = "Phiên không hợp lệ. Vui lòng bắt đầu lại.")
+                }
+            } else {
+                NfcFlowRoute(
+                    repository = repository,
+                    sessionId = safeSessionId,
+                    onCompleted = {
+                        navController.navigate(Routes.SELFIE_GUIDE) {
+                            popUpTo(Routes.NFC_VERIFY) { inclusive = true }
+                        }
+                    },
+                    onExitToHome = {
+                        sessionId = null
+                        navController.navigate(Routes.SPLASH) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+        }
+
 
         composable(Routes.SELFIE_GUIDE) {
             val safeSessionId = sessionId

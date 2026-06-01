@@ -11,4 +11,5 @@ object Routes {
     const val LIVENESS_GUIDE = "liveness_guide"
     const val VERIFICATION = "verification"
     const val HISTORY_SUPPORT = "history_support"
+    const val NFC_VERIFY = "nfc_verify"
 }
