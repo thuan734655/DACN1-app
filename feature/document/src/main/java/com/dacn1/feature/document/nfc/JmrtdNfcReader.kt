@@ -15,7 +15,9 @@ import org.jmrtd.lds.CardAccessFile
 import org.jmrtd.lds.PACEInfo
 import org.jmrtd.lds.icao.DG1File
 import org.jmrtd.lds.icao.DG2File
+import java.io.DataInputStream
 import java.security.Security
+import com.dacn1.core.model.VerifyNfcRequest
 
 private const val TAG = "JmrtdNfcReader"
 
@@ -44,9 +46,9 @@ object JmrtdNfcReader {
      * @param tag   Tag NFC nhận được từ NfcAdapter.ReaderCallback
      * @param mrzKey Chuỗi 27 ký tự từ server:
      *              [CCCD 12 số][Check 1][DOB yyMMdd][Check 1][Expiry yyMMdd][Check 1]
-     * @return "dg1=<base64>;dg2=<base64>"
+     * @return [VerifyNfcRequest] chứa thông tin giải mã
      */
-    suspend fun readTag(tag: Tag, mrzKey: String): String = withContext(Dispatchers.IO) {
+    suspend fun readTag(tag: Tag, mrzKey: String): VerifyNfcRequest = withContext(Dispatchers.IO) {
         require(mrzKey.length >= 27) { "Key MRZ không đủ 27 ký tự" }
 
         // Chuỗi mrzKey từ server có định dạng (27 ký tự):
@@ -137,10 +139,53 @@ object JmrtdNfcReader {
                 throw e
             }
 
-            val dg1B64 = Base64.encodeToString(dg1.encoded, Base64.NO_WRAP)
-            val dg2B64 = Base64.encodeToString(dg2.encoded, Base64.NO_WRAP)
-            Log.w(TAG, "=== XÁC THỰC NFC HOÀN TẤT ===")
-            "dg1=$dg1B64;dg2=$dg2B64"
+            Log.w(TAG, "--- Phân tích dữ liệu DG1 (thông tin MRZ) ---")
+            val mrzInfo = dg1.mrzInfo
+            val documentNumber = mrzInfo.documentNumber ?: ""
+            // Gộp Họ và Tên đệm + Tên
+            val primaryId = mrzInfo.primaryIdentifier?.replace("<", " ")?.trim() ?: ""
+            val secondaryId = mrzInfo.secondaryIdentifier?.replace("<", " ")?.trim() ?: ""
+            val fullName = "$primaryId $secondaryId".trim()
+            val dateOfBirthStr = mrzInfo.dateOfBirth ?: ""
+            val dateOfExpiryStr = mrzInfo.dateOfExpiry ?: ""
+            val nationality = mrzInfo.nationality ?: ""
+            val gender = mrzInfo.gender?.toString() ?: ""
+
+            Log.w(TAG, "--- Phân tích dữ liệu DG2 (ảnh chân dung) ---")
+            var faceImageBase64 = ""
+            val faceInfos = dg2.faceInfos
+            if (!faceInfos.isNullOrEmpty()) {
+                val imageInfos = faceInfos.first().faceImageInfos
+                if (!imageInfos.isNullOrEmpty()) {
+                    val imageInfo = imageInfos.first()
+                    val imageLength = imageInfo.imageLength
+                    
+                    try {
+                        imageInfo.imageInputStream.use { ism ->
+                            val imageBytes = ByteArray(imageLength)
+                            DataInputStream(ism).use { dis ->
+                                dis.readFully(imageBytes)
+                            }
+                            faceImageBase64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                            Log.w(TAG, "  ✓ Trích xuất ảnh chân dung thành công (${imageBytes.size} bytes)")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "  ✗ Lỗi trích xuất ảnh DG2: ${e.message}")
+                    }
+                }
+            }
+
+            Log.w(TAG, "=== XÁC THỰC VÀ GIẢI MÃ NFC HOÀN TẤT ===")
+            
+            VerifyNfcRequest(
+                idNumber = documentNumber,
+                fullName = fullName,
+                dateOfBirth = dateOfBirthStr,
+                dateOfExpiry = dateOfExpiryStr,
+                nationality = nationality,
+                gender = gender,
+                faceImageBase64 = faceImageBase64
+            )
 
         } finally {
             runCatching { passportService?.close() }

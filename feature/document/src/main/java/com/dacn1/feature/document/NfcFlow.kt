@@ -49,6 +49,9 @@ fun NfcFlowRoute(
     var nfcScanning by remember { mutableStateOf(false) }
     var nfcVerifying by remember { mutableStateOf(false) }
     var nfcKey by remember { mutableStateOf<String?>(null) }
+    
+    var showSuccessDialog by remember { mutableStateOf(false) }
+    var showFailedDialog by remember { mutableStateOf(false) }
     fun startNfcVerification() {
         nfcInfo = null
         nfcStage = NfcStage.FETCHING_KEY
@@ -65,7 +68,7 @@ fun NfcFlowRoute(
         }
     }
 
-    fun verifyNfcToken(token: String) {
+    fun verifyNfcToken(requestPayload: VerifyNfcRequest) {
         nfcScanning = false
         nfcStage = NfcStage.VERIFYING
         nfcVerifying = true
@@ -73,18 +76,23 @@ fun NfcFlowRoute(
             try {
                 val response = repository.verifyNfc(
                     sessionId = sessionId,
-                    request = VerifyNfcRequest(
-                        nfcToken = token,
-                        idNumber = null
-                    )
+                    request = requestPayload
                 )
                 nfcVerifying = false
-                nfcInfo = response.message
-                nfcStage = if (response.passed) NfcStage.PASSED else NfcStage.FAILED
+                if (response.passed) {
+                    nfcStage = NfcStage.PASSED
+                    nfcInfo = null
+                    showSuccessDialog = true
+                } else {
+                    nfcStage = NfcStage.FAILED
+                    nfcInfo = response.message
+                    showFailedDialog = true
+                }
             } catch (ex: Exception) {
                 nfcVerifying = false
                 nfcStage = NfcStage.FAILED
                 nfcInfo = ex.message ?: "Không thể xác thực NFC"
+                showFailedDialog = true
             }
         }
     }
@@ -103,13 +111,14 @@ fun NfcFlowRoute(
             onTagDiscovered = {
                 nfcStage = NfcStage.READING
             },
-            onTagRead = { token ->
-                verifyNfcToken(token)
+            onTagRead = { requestPayload ->
+                verifyNfcToken(requestPayload)
             },
             onError = { msg ->
                 nfcScanning = false
                 nfcStage = NfcStage.FAILED
                 nfcInfo = msg
+                showFailedDialog = true
             }
         )
     }
@@ -204,6 +213,43 @@ fun NfcFlowRoute(
                 )
             }
         }
+
+        if (showSuccessDialog) {
+            AlertDialog(
+                onDismissRequest = { /* Must click button */ },
+                title = { Text("Thành công") },
+                text = { Text("Đọc và giải mã dữ liệu CCCD thành công. Nhấn xác nhận để tiếp tục chụp ảnh chân dung.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSuccessDialog = false
+                        onCompleted()
+                    }) {
+                        Text("Xác nhận")
+                    }
+                }
+            )
+        }
+
+        if (showFailedDialog) {
+            AlertDialog(
+                onDismissRequest = { showFailedDialog = false },
+                title = { Text("Quét NFC thất bại") },
+                text = { Text(nfcInfo ?: "Có lỗi xảy ra trong quá trình quét. Vui lòng quét lại.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showFailedDialog = false
+                        startNfcVerification()
+                    }) {
+                        Text("Quét lại")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFailedDialog = false }) {
+                        Text("Đóng")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -214,7 +260,7 @@ private fun NfcReaderEffect(
     nfcKey: String,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     onTagDiscovered: () -> Unit,
-    onTagRead: (String) -> Unit,
+    onTagRead: (VerifyNfcRequest) -> Unit,
     onError: (String) -> Unit
 ) {
     DisposableEffect(activity, nfcAdapter) {
@@ -222,8 +268,8 @@ private fun NfcReaderEffect(
             activity.runOnUiThread { onTagDiscovered() }
             coroutineScope.launch {
                 try {
-                    val token = com.dacn1.feature.document.nfc.JmrtdNfcReader.readTag(tag, nfcKey)
-                    activity.runOnUiThread { onTagRead(token) }
+                    val requestPayload = com.dacn1.feature.document.nfc.JmrtdNfcReader.readTag(tag, nfcKey)
+                    activity.runOnUiThread { onTagRead(requestPayload) }
                 } catch (ex: Exception) {
                     activity.runOnUiThread { onError(ex.message ?: "Không đọc được dữ liệu NFC") }
                 }

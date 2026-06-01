@@ -49,8 +49,13 @@ data class ResultResponse(
 )
 
 data class VerifyNfcRequest(
-    val nfcToken: String,
-    val idNumber: String? = null
+    val idNumber: String,
+    val fullName: String,
+    val dateOfBirth: String,
+    val dateOfExpiry: String,
+    val nationality: String,
+    val gender: String,
+    val faceImageBase64: String
 )
 
 data class VerifyNfcResponse(
