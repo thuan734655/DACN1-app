@@ -8,7 +8,15 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +56,7 @@ import kotlinx.coroutines.launch
 
 private enum class LivenessStage {
     TRACKING,
+    SAVING,
     REVIEW
 }
 
@@ -70,9 +80,10 @@ fun LivenessFlowRoute(
     var faceDetected by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var recordedVideoPath by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    if (stage == LivenessStage.TRACKING) {
+    if (stage == LivenessStage.TRACKING || stage == LivenessStage.SAVING) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -90,6 +101,17 @@ fun LivenessFlowRoute(
                     if (expected != null && result.direction == expected) {
                         currentStepIndex += 1
                     }
+                },
+                isRecording = stage == LivenessStage.TRACKING,
+                onVideoSaved = { path ->
+                    recordedVideoPath = path
+                    if (stage == LivenessStage.SAVING) {
+                        stage = LivenessStage.REVIEW
+                    }
+                },
+                onRecordingError = { err ->
+                    errorMessage = err
+                    stage = LivenessStage.TRACKING
                 }
             )
 
@@ -104,11 +126,19 @@ fun LivenessFlowRoute(
             }
 
             Spacer(modifier = Modifier.weight(1f))
-            PrimaryButton(
-                text = "Hoàn tất quay video",
-                enabled = faceDetected && currentStepIndex >= requiredSequence.size,
-                onClick = { stage = LivenessStage.REVIEW }
-            )
+            if (stage == LivenessStage.SAVING) {
+                PrimaryButton(
+                    text = "Đang lưu video...",
+                    enabled = false,
+                    onClick = {}
+                )
+            } else {
+                PrimaryButton(
+                    text = "Hoàn tất quay video",
+                    enabled = faceDetected && currentStepIndex >= requiredSequence.size,
+                    onClick = { stage = LivenessStage.SAVING }
+                )
+            }
         }
     } else {
         Column(
@@ -142,14 +172,16 @@ fun LivenessFlowRoute(
                             currentStepIndex = 0
                             stage = LivenessStage.TRACKING
                             errorMessage = null
+                            recordedVideoPath = null
                         }
                     )
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     PrimaryButton(
                         text = if (uploading) "Đang gửi..." else "Dùng video này",
-                        enabled = !uploading && currentStepIndex >= requiredSequence.size,
+                        enabled = !uploading && currentStepIndex >= requiredSequence.size && recordedVideoPath != null,
                         onClick = {
+                            val path = recordedVideoPath ?: return@PrimaryButton
                             uploading = true
                             errorMessage = null
                             scope.launch {
@@ -157,15 +189,24 @@ fun LivenessFlowRoute(
                                     val response = repository.uploadFile(
                                         sessionId = sessionId,
                                         fileType = UploadFileType.LIVENESS_VIDEO,
-                                        localPath = "mock/liveness.mp4"
+                                        localPath = path
                                     )
-                                    if (response.uploaded) {
-                                        onCompleted()
+                                    if (response.uploaded && response.file_id != null) {
+                                        val livenessRes = repository.processLiveness(
+                                            sessionId = sessionId,
+                                            videoFileId = response.file_id!!,
+                                            expectedActions = requiredSequence.map { it.name }
+                                        )
+                                        if (livenessRes.live) {
+                                            onCompleted()
+                                        } else {
+                                            errorMessage = "Liveness không đạt yêu cầu (${livenessRes.score}). Vui lòng quay lại."
+                                        }
                                     } else {
                                         errorMessage = response.error?.message ?: "Không thể tải video xác thực"
                                     }
                                 } catch (ex: Exception) {
-                                    errorMessage = ex.message ?: "Không thể gửi video xác thực"
+                                    errorMessage = ex.message ?: "Lỗi kết nối khi gửi video"
                                 } finally {
                                     uploading = false
                                 }
@@ -180,7 +221,10 @@ fun LivenessFlowRoute(
 
 @Composable
 private fun PoseCameraTrackerView(
-    onPoseUpdate: (FacePoseResult) -> Unit
+    onPoseUpdate: (FacePoseResult) -> Unit,
+    isRecording: Boolean,
+    onVideoSaved: (String) -> Unit,
+    onRecordingError: (String) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -192,6 +236,36 @@ private fun PoseCameraTrackerView(
         }
     }
     val poseTracker = remember { FacePoseTracker() }
+
+    val videoCapture = remember {
+        val recorder = Recorder.Builder()
+            .setQualitySelector(QualitySelector.from(Quality.LOWEST))
+            .build()
+        VideoCapture.withOutput(recorder)
+    }
+
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            val videoFile = File(context.cacheDir, "liveness_${System.currentTimeMillis()}.mp4")
+            val outputOptions = FileOutputOptions.Builder(videoFile).build()
+            activeRecording = videoCapture.output
+                .prepareRecording(context, outputOptions)
+                .start(ContextCompat.getMainExecutor(context)) { recordEvent ->
+                    if (recordEvent is VideoRecordEvent.Finalize) {
+                        if (!recordEvent.hasError()) {
+                            onVideoSaved(videoFile.absolutePath)
+                        } else {
+                            onRecordingError("Lỗi lưu video: ${recordEvent.error}")
+                        }
+                    }
+                }
+        } else {
+            activeRecording?.stop()
+            activeRecording = null
+        }
+    }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -223,7 +297,8 @@ private fun PoseCameraTrackerView(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
                     preview,
-                    analysis
+                    analysis,
+                    videoCapture
                 )
             }, executor)
         }

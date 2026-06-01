@@ -256,6 +256,35 @@ class MockEkycRepository(
         )
     }
 
+    override suspend fun processLiveness(
+        sessionId: String,
+        videoFileId: String,
+        expectedActions: List<String>
+    ): com.dacn1.core.model.LivenessResponse {
+        delay(config.networkDelayMs)
+        return com.dacn1.core.model.LivenessResponse(
+            live = true,
+            score = 0.95,
+            attack_type = "NONE",
+            actions = expectedActions.associateWith { true }
+        )
+    }
+
+    override suspend fun finalizeSession(sessionId: String, consent: Boolean): com.dacn1.core.model.FinalizeResponse {
+        delay(config.networkDelayMs)
+        return com.dacn1.core.model.FinalizeResponse(
+            session_id = sessionId,
+            decision = "APPROVED",
+            status = "COMPLETED",
+            summary = com.dacn1.core.model.FinalizeSummary(
+                ocr_pass = true,
+                face_match_pass = true,
+                liveness_pass = true
+            ),
+            risk_score = 0.12
+        )
+    }
+
     override suspend fun processOcr(
         sessionId: String,
         frontFileId: String,

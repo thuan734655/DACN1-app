@@ -68,6 +68,18 @@ interface EkycApiService {
     @POST("/v1/ekyc/sessions/{session_id}/face-match")
     suspend fun processFaceMatch(
         @Path("session_id") sessionId: String,
-        @Body request: FaceMatchRequest
-    ): FaceMatchResponse
+        @Body request: com.dacn1.core.model.FaceMatchRequest
+    ): com.dacn1.core.model.FaceMatchResponse
+
+    @POST("/v1/ekyc/sessions/{session_id}/liveness")
+    suspend fun processLiveness(
+        @Path("session_id") sessionId: String,
+        @Body request: com.dacn1.core.model.LivenessRequest
+    ): com.dacn1.core.model.LivenessResponse
+
+    @POST("/v1/ekyc/sessions/{session_id}/finalize")
+    suspend fun finalizeSession(
+        @Path("session_id") sessionId: String,
+        @Body request: com.dacn1.core.model.FinalizeRequest
+    ): com.dacn1.core.model.FinalizeResponse
 }

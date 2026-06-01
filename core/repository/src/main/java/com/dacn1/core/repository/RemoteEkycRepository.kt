@@ -125,6 +125,24 @@ class RemoteEkycRepository(
         }
     }
 
+    override suspend fun processLiveness(
+        sessionId: String,
+        videoFileId: String,
+        expectedActions: List<String>
+    ): com.dacn1.core.model.LivenessResponse {
+        return withContext(Dispatchers.IO) {
+            val request = com.dacn1.core.model.LivenessRequest(videoFileId, expectedActions)
+            apiService.processLiveness(sessionId, request)
+        }
+    }
+
+    override suspend fun finalizeSession(sessionId: String, consent: Boolean): com.dacn1.core.model.FinalizeResponse {
+        return withContext(Dispatchers.IO) {
+            val request = com.dacn1.core.model.FinalizeRequest(consent)
+            apiService.finalizeSession(sessionId, request)
+        }
+    }
+
     override suspend fun processOcr(
         sessionId: String,
         frontFileId: String,

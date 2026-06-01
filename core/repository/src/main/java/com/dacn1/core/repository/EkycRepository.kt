@@ -24,7 +24,9 @@ interface EkycRepository {
     suspend fun verifyNfc(sessionId: String, request: VerifyNfcRequest): VerifyNfcResponse
     suspend fun getErrorCatalog(): List<ErrorCatalogItem>
     suspend fun getHistory(): List<VerificationResult>
-    suspend fun processFaceMatch(sessionId: String, documentFaceFileId: String, selfieFileId: String): FaceMatchResponse
+    suspend fun processFaceMatch(sessionId: String, documentFaceFileId: String, selfieFileId: String): com.dacn1.core.model.FaceMatchResponse
+    suspend fun processLiveness(sessionId: String, videoFileId: String, expectedActions: List<String>): com.dacn1.core.model.LivenessResponse
+    suspend fun finalizeSession(sessionId: String, consent: Boolean): com.dacn1.core.model.FinalizeResponse
     suspend fun processOcr(
         sessionId: String, 
         frontFileId: String,

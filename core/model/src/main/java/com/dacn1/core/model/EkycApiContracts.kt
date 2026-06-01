@@ -84,6 +84,36 @@ data class FaceMatchQuality(
     val selfie_brightness: Double
 )
 
+data class LivenessRequest(
+    val video_file_id: String,
+    val expected_actions: List<String>
+)
+
+data class LivenessResponse(
+    val live: Boolean,
+    val score: Double,
+    val attack_type: String,
+    val actions: Map<String, Boolean>
+)
+
+data class FinalizeRequest(
+    val consent: Boolean = true
+)
+
+data class FinalizeSummary(
+    val ocr_pass: Boolean,
+    val face_match_pass: Boolean,
+    val liveness_pass: Boolean
+)
+
+data class FinalizeResponse(
+    val session_id: String,
+    val decision: String,
+    val status: String,
+    val summary: FinalizeSummary,
+    val risk_score: Double
+)
+
 data class OcrResponse(
     val success: String,
     val fields: Map<String, String>? = null,
